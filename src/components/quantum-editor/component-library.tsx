@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Search, Box, Loader2, RefreshCw, Cpu, Waypoi
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { componentsQueryOptions, componentPreviewQueryOptions } from "@/lib/bridge/queries";
-
+import { useDesignStore } from "@/lib/editor/design-store";
 import type { ComponentCategory, ComponentSummary } from "@/lib/bridge/types";
 import { isBridgeConfigured } from "@/lib/bridge/client";
 
@@ -163,17 +163,14 @@ function CategoryIcon({ category, className }: { category: ComponentCategory; cl
 }
 
 function LibraryItem({ component }: { component: ComponentSummary }) {
-  const [dragging, setDragging] = useState(false);
+  const { state, dispatch } = useDesignStore();
   const queryClient = useQueryClient();
   const previewQ = useQuery({
     ...componentPreviewQueryOptions(component.id),
-    // If we previously cached an empty SVG (before the server fix),
-    // mark it stale immediately so this render triggers a fresh fetch.
     staleTime: 0,
   });
 
-  // Invalidate empty cached previews once on mount so stale blanks are
-  // replaced with real geometry on the next background refetch.
+  // Invalidate cached empty previews so real geometry loads on next mount.
   useEffect(() => {
     if (previewQ.data && !previewQ.data.svg) {
       queryClient.invalidateQueries({
@@ -182,26 +179,31 @@ function LibraryItem({ component }: { component: ComponentSummary }) {
     }
   }, [previewQ.data, component.id, queryClient]);
 
+  const isPlacingThis = state.placingComponentId === component.id;
   const hasSvg = Boolean(previewQ.data?.svg);
+
+  const handleClick = () => {
+    if (isPlacingThis) {
+      // Second click on same item cancels placement mode.
+      dispatch({ type: "PLACE_MODE_EXIT" });
+    } else {
+      // Enter placement mode — ghost will follow cursor on canvas.
+      dispatch({ type: "PLACE_MODE_ENTER", componentId: component.id });
+    }
+  };
 
   return (
     <motion.div
-      draggable
-      animate={{ scale: dragging ? 0.95 : 1, opacity: dragging ? 0.6 : 1 }}
-      transition={{ duration: 0.12 }}
-      onDragStart={(e) => {
-        const dt = (e as unknown as DragEvent).dataTransfer;
-        if (dt) {
-          dt.setData("application/x-silicofeller-component", component.id);
-          dt.effectAllowed = "copy";
-        }
-        setDragging(true);
-      }}
-      onDragEnd={() => setDragging(false)}
+      animate={{ scale: isPlacingThis ? 0.93 : 1 }}
+      transition={{ duration: 0.1 }}
+      onClick={handleClick}
       className={cn(
-        "group flex cursor-grab flex-col items-center gap-1 rounded-md border border-border bg-background p-1.5 transition-all hover:border-primary hover:shadow-sm active:cursor-grabbing",
+        "group flex cursor-pointer flex-col items-center gap-1 rounded-md border bg-background p-1.5 transition-all hover:border-primary hover:shadow-sm select-none",
+        isPlacingThis
+          ? "border-primary bg-primary/10 ring-1 ring-primary"
+          : "border-border",
       )}
-      title={`${component.name} — ${component.description ?? component.category}`}
+      title={`${component.name} — click to place on canvas`}
     >
       {/* Preview thumbnail — real SVG from Qiskit Metal, or category icon */}
       <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded bg-muted/40">
@@ -211,26 +213,33 @@ function LibraryItem({ component }: { component: ComponentSummary }) {
           <svg
             viewBox={`${previewQ.data!.viewBox.x} ${previewQ.data!.viewBox.y} ${previewQ.data!.viewBox.w} ${previewQ.data!.viewBox.h}`}
             className="h-full w-full p-0.5"
-            color="currentColor"
+            color={isPlacingThis ? "var(--primary)" : "currentColor"}
             dangerouslySetInnerHTML={{ __html: previewQ.data!.svg }}
           />
         ) : (
-          // No geometry available (routes, abstract base classes) —
-          // show a meaningful category icon instead of a generic box.
           <CategoryIcon
             category={component.category}
-            className="h-5 w-5 text-muted-foreground group-hover:text-primary"
+            className={cn(
+              "h-5 w-5",
+              isPlacingThis ? "text-primary" : "text-muted-foreground group-hover:text-primary",
+            )}
           />
         )}
       </div>
 
-      {/* Name — truncated with full name on hover via title */}
       <span
-        className="w-full truncate text-center text-[10px] font-semibold leading-tight text-foreground"
+        className={cn(
+          "w-full truncate text-center text-[10px] font-semibold leading-tight",
+          isPlacingThis ? "text-primary" : "text-foreground",
+        )}
         title={component.name}
       >
         {component.name}
       </span>
+
+      {isPlacingThis && (
+        <span className="text-[9px] font-bold text-primary">placing…</span>
+      )}
     </motion.div>
   );
 }

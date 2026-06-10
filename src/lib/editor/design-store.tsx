@@ -37,6 +37,8 @@ export interface EditorState {
   connections: Connection[];
   selection: Selection;
   pendingPin: PendingPin | null;
+  /** ID of the component currently being placed (placement mode). Null = not placing. */
+  placingComponentId: string | null;
   zoom: number;
   pan: { x: number; y: number };
   tool: Tool;
@@ -67,7 +69,9 @@ export type EditorAction =
   | { type: "PAN"; x: number; y: number }
   | { type: "UNDO" }
   | { type: "REDO" }
-  | { type: "LOAD"; doc: DesignDocument };
+  | { type: "LOAD"; doc: DesignDocument }
+  | { type: "PLACE_MODE_ENTER"; componentId: string }
+  | { type: "PLACE_MODE_EXIT" };
 
 function snapshot(s: EditorState): Snapshot {
   return {
@@ -92,6 +96,7 @@ export const initialEditorState: EditorState = {
   connections: [],
   selection: null,
   pendingPin: null,
+  placingComponentId: null,
   zoom: 1,
   pan: { x: 0, y: 0 },
   tool: "select",
@@ -168,7 +173,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       };
     }
     case "CANCEL_PIN":
-      return { ...state, pendingPin: null };
+      return { ...state, pendingPin: null, placingComponentId: null };
     case "DELETE_CONNECTION":
       return {
         ...state,
@@ -230,8 +235,13 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         connections: action.doc.connections,
         selection: null,
         pendingPin: null,
+        placingComponentId: null,
         rev: state.rev + 1,
       };
+    case "PLACE_MODE_ENTER":
+      return { ...state, placingComponentId: action.componentId, pendingPin: null, selection: null };
+    case "PLACE_MODE_EXIT":
+      return { ...state, placingComponentId: null };
     default:
       return state;
   }
