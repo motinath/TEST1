@@ -52,6 +52,13 @@ export function EditorCanvas() {
     staleTime: 0,
   });
 
+  // Derive the default route component from the live bridge registry.
+  // Falls back to "RouteMeander" only if no route components are discovered yet.
+  const defaultRouteComponent = useMemo(() => {
+    const routes = (componentsQ.data ?? []).filter((c) => c.category === "routes");
+    return routes.find((c) => c.id === "RouteMeander")?.id ?? routes[0]?.id ?? "RouteMeander";
+  }, [componentsQ.data]);
+
   // Per-placement pin queries — used to draw interactive pin handles.
   const pinQueries = useQueries({
     queries: state.placements.map((p) => componentPinsQueryOptions(p.componentId)),
@@ -401,7 +408,7 @@ export function EditorCanvas() {
                 type: "PIN_CLICK",
                 placementId: p.id,
                 pinName,
-                defaultRouteComponentId: "RouteMeander",
+                defaultRouteComponentId: defaultRouteComponent,
               })
             }
           />

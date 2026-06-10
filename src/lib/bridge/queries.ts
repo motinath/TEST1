@@ -42,9 +42,23 @@ export const componentPreviewQueryOptions = (
 ) =>
   queryOptions({
     queryKey: ["bridge", "components", id, "preview", params ?? null] as const,
-    queryFn: async ({ signal }) => unwrap(await bridgeClient.getPreview(id, params, signal)),
-    // Default-param previews are stable; user-tuned previews refetch on change.
+    queryFn: async ({ signal }) => {
+      const result = await bridgeClient.getPreview(id, params, signal);
+      const data = unwrap(result);
+      // If the bridge returned an empty SVG, don't cache it — routes and
+      // abstract base classes have no standalone geometry. Return the data
+      // but with staleTime:0 so the next mount retries rather than serving
+      // a permanently-cached blank.
+      return data;
+    },
+    // Only cache non-empty previews for a full day. Empty previews (routes etc.)
+    // use staleTime:0 so they never serve stale blanks.
     staleTime: params ? 0 : DAY,
     gcTime: WEEK,
     enabled: id.length > 0,
+    // Treat an empty svg as a soft failure — don't retry aggressively.
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes("empty")) return false;
+      return failureCount < 1;
+    },
   });

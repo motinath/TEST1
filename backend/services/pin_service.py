@@ -27,7 +27,10 @@ class PinService:
         try:
             return self._extract_via_instantiation(component_id, summary.module)
         except Exception as exc:
-            log.warning("Pin extraction failed for %s: %s", component_id, exc)
+            log.warning(
+                "Pin extraction failed for %s: %s — returning empty pin list.",
+                component_id, exc, exc_info=True,
+            )
             return ComponentPins(id=component_id, pins=[])
 
     def _extract_via_instantiation(

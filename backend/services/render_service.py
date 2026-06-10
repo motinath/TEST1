@@ -73,9 +73,20 @@ class RenderService:
             (_design_to_graph(design),),
             timeout=DESIGN_RENDER_TIMEOUT,
         )
+        if isinstance(result, dict):
+            svg_str = result.get("svg", "")
+            vb = result.get("vb", [-4500, -3000, 9000, 6000])
+            view_box = ViewBox(
+                x=float(vb[0]), y=float(vb[1]),
+                w=float(vb[2]), h=float(vb[3]),
+            )
+        else:
+            svg_str = result if isinstance(result, str) else ""
+            view_box = ViewBox(x=-4500, y=-3000, w=9000, h=6000)
+
         return RenderResult(
-            svg=result if isinstance(result, str) else "",
-            viewBox=ViewBox(x=-4500, y=-3000, w=9000, h=6000),
+            svg=svg_str,
+            viewBox=view_box,
             units="um",
             layers=[],
             routes=[],
@@ -206,10 +217,18 @@ def _worker_component_svg(queue: multiprocessing.Queue, args: tuple) -> None:
 
         try:
             tables = design.qgeometry.tables
+            # Get the integer component ID assigned by Qiskit Metal.
+            # design.components["preview"].id is the internal integer key stored
+            # in the qgeometry tables under the "component" column.
+            comp_int_id = design.components["preview"].id
+
             for table_name, gdf in tables.items():
-                # Filter rows belonging to "preview"
-                mask = gdf["component"] == "preview" if "component" in gdf.columns else slice(None)
-                rows = gdf[mask] if "component" in gdf.columns else gdf
+                # Filter rows belonging to our throwaway component.
+                if "component" in gdf.columns:
+                    mask = gdf["component"] == comp_int_id
+                    rows = gdf[mask]
+                else:
+                    rows = gdf
 
                 color = COLORS.get(table_name, "#5B9BD5")
                 for _, row in rows.iterrows():
@@ -386,7 +405,24 @@ def _worker_full_design(queue: multiprocessing.Queue, args: tuple) -> None:
             facecolor="#F4F4F0",
         )
         plt.close(fig)
-        queue.put(_normalize_svg(buffer.getvalue()))
+
+        # Extract actual data bounds from the axes in micrometers.
+        # Qiskit Metal works in mm; convert to um to match component preview units.
+        MM_TO_UM = 1000.0
+        try:
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+            vb_x = xlim[0] * MM_TO_UM
+            vb_y = ylim[0] * MM_TO_UM
+            vb_w = (xlim[1] - xlim[0]) * MM_TO_UM
+            vb_h = (ylim[1] - ylim[0]) * MM_TO_UM
+        except Exception:
+            vb_x, vb_y, vb_w, vb_h = -4500, -3000, 9000, 6000
+
+        queue.put({
+            "svg": _normalize_svg(buffer.getvalue()),
+            "vb": [vb_x, vb_y, vb_w, vb_h],
+        })
     except Exception:
         log.exception("Full design SVG worker failed")
         queue.put("")

@@ -1,0 +1,11 @@
+--- a/qiskit_metal/__init__.py
++++ b/qiskit_metal/__init__.py
+@@ -50,6 +50,10 @@ def __setup_Qt_backend():
+     """
+     # pylint: disable=import-outside-toplevel
+ 
++    # Skip entirely when running headless (FastAPI bridge server).
++    if os.getenv('QISKIT_METAL_HEADLESS'):
++        return
++
+     # When in vscode and in debug-mode, may want to comment

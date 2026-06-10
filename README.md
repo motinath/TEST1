@@ -1,199 +1,249 @@
 # Silicofeller — Qiskit Metal Schematic Editor
 
-Visual drag-and-drop editor for superconducting quantum chip design.
-Every component shape, pin position, parameter, and generated Python script
-comes from the live Qiskit Metal installation — nothing is hardcoded.
+Visual drag-and-drop schematic editor for superconducting quantum chip design.
+Every component, parameter, pin, shape, and generated Python script comes from
+the live Qiskit Metal installation — nothing is hardcoded in the frontend.
 
 ---
 
-## How to run
+## Quick start (clone and run)
 
-You need **two terminals** — one for the backend bridge, one for the frontend.
+### Requirements
+- Python 3.11
+- Node.js 18+
+- Git
 
----
+### Step 1 — Clone
 
-### Terminal 1 — Start the backend bridge
+```bash
+git clone https://github.com/motinath/TEST1.git
+cd TEST1
+```
+
+### Step 2 — Set up the backend (one time only)
+
+```bash
+python setup_backend.py
+```
+
+This single command:
+- Creates `backend/.venv` virtual environment
+- Installs qiskit-metal 0.1.5 without the incompatible GUI dependency (PySide2)
+- Installs all runtime dependencies (FastAPI, numpy, scipy, shapely, geopandas…)
+- Installs PySide6 and creates a PySide2→PySide6 compatibility shim
+- Patches qiskit-metal for headless server operation
+- Verifies the installation works
+
+Takes 2–5 minutes depending on download speed.
+
+### Step 3 — Configure the frontend
+
+```bash
+cp .env.example .env
+```
+
+The `.env` file contains:
+```
+VITE_BRIDGE_URL=http://localhost:8000
+```
+
+### Step 4 — Install frontend dependencies (one time only)
+
+```bash
+npm install
+```
+
+### Step 5 — Start both services (two terminals)
+
+**Terminal 1 — Backend bridge:**
 
 ```powershell
-cd s:\edit\editor-master
-
-# Activate the virtual environment
+# Windows PowerShell
 backend\.venv\Scripts\Activate.ps1
-
-# Start the bridge (runs on http://localhost:8000)
 $env:QISKIT_METAL_HEADLESS="1"
 python -m backend.start
 ```
 
-**Verify it is working:**
-
-Open a second PowerShell and run:
-
-```powershell
-Invoke-RestMethod http://localhost:8000/health
+```bash
+# Linux / macOS
+source backend/.venv/bin/activate
+export QISKIT_METAL_HEADLESS=1
+python -m backend.start
 ```
 
-Expected output:
-```
-status  version  cache
-------  -------  -----
-ok      0.1.0    @{entries=1}
-```
+Wait for: `Uvicorn running on http://0.0.0.0:8000`
 
-Wait ~10–30 seconds for component discovery, then:
+**Terminal 2 — Frontend:**
 
-```powershell
-Invoke-RestMethod http://localhost:8000/components | Format-Table id, category
-```
-
-You should see 40+ real Qiskit Metal components like `TransmonPocket`, `RouteMeander`, etc.
-
----
-
-### Terminal 2 — Start the frontend
-
-```powershell
-cd s:\edit\editor-master
-
-# Install node dependencies (first time only)
-npm install
-
-# Start the dev server
+```bash
 npm run dev
 ```
 
-Then open your browser at:
+### Step 6 — Open the editor
 
 ```
 http://localhost:3000
 ```
 
-Click **Open Schematic Editor** → you should see the component library loaded
-from the live bridge, not mock data.
+Click **Open Schematic Editor**.
+The component library loads 40+ real Qiskit Metal components.
+The yellow "Development preview" banner is gone.
 
 ---
 
-## What you will see
+## What you see when everything is working
 
-| UI element | Where it comes from |
-|------------|---------------------|
-| Component Library panel | `GET /components` — real qiskit_metal.qlibrary scan |
-| Parameter fields (Property Inspector) | `GET /components/{id}/metadata` — from `default_options` |
+| UI element | Data source |
+|------------|-------------|
+| Component Library | `GET /components` — live `qiskit_metal.qlibrary` scan |
+| Component thumbnails | `GET /components/{id}/preview` — real Shapely geometry SVG |
+| Parameter fields | `GET /components/{id}/metadata` — from `QComponent.default_options` |
 | Pin handles on canvas | `GET /components/{id}/pins` — from throwaway QComponent instantiation |
-| Component shape preview | `GET /components/{id}/preview` — Shapely → SVG |
 | Full chip render | `POST /design/render` — QMplRenderer → SVG |
 | Generated Python | `POST /design/generate-code` — self-contained Qiskit Metal script |
 
 ---
 
-## Verify all outputs come from the bridge
-
-In the editor, click the **Bridge Status** tab in the bottom panel,
-then click **Run Phase 0**.
-
-All 13+ checks should go green. Green = data from live Qiskit Metal.
-
----
-
-## Quick API test (curl / PowerShell)
+## Verify bridge is working
 
 ```powershell
 # Health check
 Invoke-RestMethod http://localhost:8000/health
 
-# List all components
-Invoke-RestMethod http://localhost:8000/components | Select id, category | Format-Table
+# Component list (40+ components expected)
+Invoke-RestMethod http://localhost:8000/components | Format-Table id, category
 
-# TransmonPocket parameters (from default_options)
-Invoke-RestMethod "http://localhost:8000/components/TransmonPocket/metadata"
+# TransmonPocket parameters from default_options
+Invoke-RestMethod http://localhost:8000/components/TransmonPocket/metadata
 
-# TransmonPocket pin positions (in mm)
-Invoke-RestMethod "http://localhost:8000/components/TransmonPocket/pins"
+# Pin positions in mm
+Invoke-RestMethod http://localhost:8000/components/TransmonPocket/pins
 
-# TransmonPocket SVG preview
-Invoke-RestMethod "http://localhost:8000/components/TransmonPocket/preview"
-
-# Generate Python code for a minimal design
-$body = '{"placements":[{"id":"p1","componentId":"TransmonPocket","name":"Q0","x":0,"y":0,"rotation":0,"params":{"pad_width":"455um"}}],"connections":[]}'
-Invoke-RestMethod -Method Post -Uri "http://localhost:8000/design/generate-code" -Body $body -ContentType "application/json"
+# SVG preview (should return ~500 chars of path data)
+$r = Invoke-RestMethod http://localhost:8000/components/TransmonPocket/preview
+Write-Host "SVG length:" $r.svg.Length
 ```
+
+In the editor, click **Bridge Status** tab → **Run Phase 0** — all checks should go green.
 
 ---
 
-## Troubleshooting
+## Architecture
 
-**Bridge fails to start — `ModuleNotFoundError: No module named 'PySide2'`**
-
-Make sure you set the headless env variable before starting:
-```powershell
-$env:QISKIT_METAL_HEADLESS="1"
-python -m backend.start
+```
+Browser (React + TypeScript)
+        │
+        │  JSON over HTTP
+        ▼
+FastAPI Bridge (Python)
+        │
+        │  Python API
+        ▼
+Qiskit Metal + Shapely
+        │
+        ├── Component discovery  (pkgutil.walk_packages)
+        ├── Metadata             (QComponent.default_options)
+        ├── Pins                 (throwaway DesignPlanar instantiation)
+        ├── SVG previews         (Shapely → SVG fragment, subprocess-isolated)
+        ├── Full render          (QMplRenderer → matplotlib SVG, subprocess-isolated)
+        └── Code generation      (standalone Python script from DesignDocument JSON)
 ```
 
-**`Activate.ps1` is blocked by execution policy**
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+The frontend stores only:
+```json
+{
+  "placements": [
+    {"id": "p1", "componentId": "TransmonPocket", "name": "Q0",
+     "x": 0, "y": 0, "rotation": 0, "params": {"pad_width": "455um"}}
+  ],
+  "connections": [
+    {"id": "c1", "from": {"placementId": "p1", "pinName": "a"},
+     "to": {"placementId": "p2", "pinName": "b"}, "routeComponentId": "RouteMeander"}
+  ]
+}
 ```
 
-Then re-run the activate command.
-
-**Frontend shows yellow "Development preview" banner**
-
-The bridge URL is not configured. Make sure:
-1. The backend is running on port 8000
-2. The `.env` file exists at the project root with:
-   ```
-   VITE_BRIDGE_URL=http://localhost:8000
-   ```
-
-Copy the example if it does not exist:
-```powershell
-Copy-Item .env.example .env
-```
-
-**Component list is empty or slow on first load**
-
-Normal — qiskit_metal.qlibrary scan takes 10–60 seconds on first request.
-Subsequent requests are instant (cached). The prewarm runs in the background
-at startup so by the time you open the browser it is usually ready.
+Nothing else. All geometry, parameters, and code generation happen in the backend.
 
 ---
 
 ## Project layout
 
 ```
-editor-master/
+TEST1/
+├── setup_backend.py          ← Run this first — sets up everything automatically
+├── .env.example              ← Copy to .env
+├── README.md
+│
 ├── backend/                  ← FastAPI bridge (Python)
-│   ├── .venv/                ← Virtual environment (created during setup)
-│   ├── app.py                ← FastAPI app, CORS, error handlers
-│   ├── start.py              ← Entry point (python -m backend.start)
-│   ├── requirements.txt      ← Python dependencies
+│   ├── pyside2_compat/       ← PySide2→PySide6 shim (installed by setup_backend.py)
+│   ├── patches/              ← Patch for qiskit-metal headless operation
+│   ├── app.py                ← FastAPI app
+│   ├── start.py              ← Entry point: python -m backend.start
+│   ├── requirements.txt      ← Python deps reference
 │   ├── services/
-│   │   ├── component_registry.py  ← scans qiskit_metal.qlibrary
-│   │   ├── metadata_service.py    ← reads QComponent.default_options
-│   │   ├── pin_service.py         ← instantiates QComponent, reads .pins
-│   │   ├── render_service.py      ← Shapely SVG + matplotlib SVG
-│   │   └── codegen_service.py     ← generates Python script
+│   │   ├── component_registry.py  ← Scans qiskit_metal.qlibrary
+│   │   ├── metadata_service.py    ← Reads QComponent.default_options
+│   │   ├── pin_service.py         ← Instantiates QComponent, reads .pins
+│   │   ├── render_service.py      ← Shapely→SVG + matplotlib full render
+│   │   └── codegen_service.py     ← Generates standalone Python script
 │   ├── routes/               ← HTTP endpoints
 │   ├── models/               ← Pydantic models
-│   └── cache/                ← in-memory cache
+│   └── cache/                ← In-memory cache
 │
 ├── src/                      ← React/TypeScript frontend
 │   ├── components/quantum-editor/
-│   │   ├── editor-canvas.tsx      ← SVG canvas, drag-drop, pan-zoom
-│   │   ├── editor-toolbar.tsx     ← New/Save/Load/Render/Generate buttons
-│   │   ├── property-inspector.tsx ← dynamic param editor
-│   │   ├── component-library.tsx  ← component list from bridge
-│   │   ├── code-panel.tsx         ← syntax-highlighted generated code
-│   │   ├── bottom-panel.tsx       ← Console/Validation/Code/Bridge tabs
+│   │   ├── editor-canvas.tsx      ← SVG canvas, drag-drop, pan/zoom
+│   │   ├── editor-toolbar.tsx     ← New/Save/Load/Render/Validate/Generate
+│   │   ├── property-inspector.tsx ← Dynamic param editor (from bridge metadata)
+│   │   ├── component-library.tsx  ← Component list + thumbnails (from bridge)
+│   │   ├── code-panel.tsx         ← Syntax-highlighted generated code
+│   │   ├── bottom-panel.tsx       ← Console/Validation/Code/Bridge-Status tabs
 │   │   └── bridge-status.tsx      ← Phase 0 validation checklist
 │   └── lib/bridge/
-│       ├── client.ts         ← HTTP client
+│       ├── client.ts         ← HTTP client (live bridge or mock fallback)
 │       ├── queries.ts        ← TanStack Query options
-│       ├── types.ts          ← TypeScript contract
-│       └── mock.ts           ← fallback when bridge not running
+│       ├── types.ts          ← TypeScript contract (mirrors Pydantic models)
+│       └── mock.ts           ← Dev fixtures (only when bridge not configured)
 │
-├── .env.example              ← copy to .env and set VITE_BRIDGE_URL
-└── README.md                 ← this file
+└── docs/
+    ├── bridge-contract.md    ← Full API contract
+    └── geometry-strategy.md  ← SVG transport design
 ```
+
+---
+
+## Troubleshooting
+
+**`Activate.ps1` is blocked by execution policy (Windows)**
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**Bridge fails — `ModuleNotFoundError`**
+Make sure `$env:QISKIT_METAL_HEADLESS="1"` is set before starting the bridge.
+
+**Component list is slow on first load**
+Normal — qiskit_metal.qlibrary scan takes 10–60 s on first request.
+Results are cached; subsequent calls are instant.
+
+**Frontend shows "Development preview" banner**
+The backend is not running or `.env` is missing.
+Check: `Invoke-RestMethod http://localhost:8000/health`
+
+**Component thumbnails show icons instead of shapes**
+Routes (RouteMeander etc.) have no standalone geometry — they need two
+connected pins to generate a path. This is correct. Qubit components
+(TransmonPocket, TransmonCross, etc.) show real Shapely geometry.
+
+---
+
+## Backend environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QISKIT_METAL_HEADLESS` | — | **Required.** Set to `1` to skip Qt GUI init |
+| `BRIDGE_HOST` | `0.0.0.0` | Bind address |
+| `BRIDGE_PORT` | `8000` | Bind port |
+| `BRIDGE_LOG_LEVEL` | `info` | `debug` / `info` / `warning` / `error` |
+| `BRIDGE_CACHE_TTL` | `0` | Cache TTL seconds (`0` = never expire) |
