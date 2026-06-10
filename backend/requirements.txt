@@ -1,0 +1,37 @@
+# FastAPI bridge dependencies
+# Install inside a virtual environment:
+#   python -m venv backend/.venv
+#   backend/.venv/Scripts/pip install -r backend/requirements.txt
+#   backend/.venv/Scripts/python -m backend.start
+
+# --- Web server ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+python-dotenv>=1.0.0
+
+# --- Qiskit Metal (no-deps install — see note below) ---
+# qiskit-metal 0.1.5 pins exact old versions incompatible with Python 3.11.
+# We install it --no-deps and supply compatible versions of each dep manually.
+# pyside2 (Qt GUI) and pyaedt/gmsh (CAD tools) are intentionally excluded —
+# the bridge is headless and never uses them.
+qiskit-metal==0.1.5
+
+# --- Qiskit Metal runtime dependencies (version-relaxed for Python 3.11) ---
+addict>=2.4.0
+descartes>=1.1.0
+gdspy>=1.6.12
+geopandas>=0.12.2
+ipython>=8.10.0
+matplotlib>=3.7.0,<4.0.0
+numpy>=1.24.0,<2.0.0
+pandas>=1.5.0,<3.0.0
+pint>=0.20.0
+pyEPR-quantum>=0.8.5
+pygments>=2.14.0
+pyyaml>=6.0
+qdarkstyle>=3.1
+qutip>=4.7.0
+scipy>=1.10.0
+scqubits>=3.1.0
+shapely>=2.0.0
